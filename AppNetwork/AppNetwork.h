@@ -57,7 +57,7 @@ typedef void (^AppTaskError)(NSError *error);
  *  @param pURL 网络接口的基础URL
  */
 + (void)configBaseURL:(NSString *)pURL;
-+ (NSString *)baseURL;
++ (NSString *)baseURL:(NSString *)pURL;
 
 /**
  *  @brief 用于设置请求超时时间，默认为 60 秒

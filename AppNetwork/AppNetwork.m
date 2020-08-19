@@ -11,7 +11,9 @@
 #import "AppCacheUtils.h"
 #import <CommonCrypto/CommonDigest.h>
 #import "AppError.h"
+#import "AppURL.h"
 
+static NSString *app_baseURL = nil;             /**< 接口基础地址 */
 static CGFloat app_MB;                          /**< 设置的最大缓存空间 */
 static NSTimeInterval app_pTimed = 30.f;        /**< 请求超时时间 */
 static AFHTTPSessionManager *app_manager = nil; /**< AFHTTPSessionManager实例对象 */
@@ -62,10 +64,11 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 }
 
 + (void)configBaseURL:(NSString *)pURL {
+    app_baseURL = pURL;
 }
 
-+ (NSString *)baseURL {
-    return @"";
++ (NSString *)baseURL:(NSString *)pURL {
+    return [AppURL baseURL:pURL];
 }
 
 /**
@@ -723,7 +726,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         return @"";
     }
 
-    if ([self baseURL].length == 0 || ![self baseURL]) {
+    if ([self baseURL:pURL].length == 0 || ![self baseURL:pURL]) {
         return pURL;
     }
 
@@ -733,17 +736,17 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 
     NSString *appendURL = pURL;
     if (![pURL hasPrefix:@"http://"] && ![pURL hasPrefix:@"https://"]) {
-        if ([[self baseURL] hasSuffix:@"/"]) { /** baseURL末尾有"/" */
+        if ([[self baseURL:pURL] hasSuffix:@"/"]) { /** baseURL末尾有"/" */
             if ([pURL hasPrefix:@"/"]) {
-                appendURL = [NSString stringWithFormat:@"%@%@", [self baseURL], [pURL substringFromIndex:1]];
+                appendURL = [NSString stringWithFormat:@"%@%@", [self baseURL:pURL], [pURL substringFromIndex:1]];
             } else {
-                appendURL = [NSString stringWithFormat:@"%@%@", [self baseURL], pURL];
+                appendURL = [NSString stringWithFormat:@"%@%@", [self baseURL:pURL], pURL];
             }
         } else { /** baseURL末尾没有"/" */
             if ([pURL hasPrefix:@"/"]) {
-                appendURL = [NSString stringWithFormat:@"%@%@", [self baseURL], pURL];
+                appendURL = [NSString stringWithFormat:@"%@%@", [self baseURL:pURL], pURL];
             } else {
-                appendURL = [NSString stringWithFormat:@"%@/%@", [self baseURL], pURL];
+                appendURL = [NSString stringWithFormat:@"%@/%@", [self baseURL:pURL], pURL];
             }
         }
     }
