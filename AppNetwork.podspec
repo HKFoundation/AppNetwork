@@ -16,7 +16,7 @@ Pod::Spec.new do |spec|
   #
 
   spec.name         = "AppNetwork"
-  spec.version      = "0.0.2"
+  spec.version      = "0.0.3"
   spec.summary      = "AppNetwork 是 Objective-C 语言的网络框架，基于 AFNetworking 的二次封装."
 
   # This description is used to generate tags and improve search results.

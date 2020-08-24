@@ -45,6 +45,12 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 
 @end
 
+@interface AppNetwork ()
+
+@property (nonatomic, strong) AFHTTPSessionManager *manager;
+
+@end
+
 @implementation AppNetwork
 
 /* ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄*
@@ -69,6 +75,10 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 
 + (NSString *)baseURL:(NSString *)pURL {
     return [AppURL baseURL:pURL];
+}
+
+- (NSString *)baseURL:(NSString *)pURL {
+    return [AppNetwork baseURL:pURL];
 }
 
 /**
@@ -102,7 +112,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  *  @brief 清除缓存
  */
 + (void)configEmptyCache {
-    [AppCacheUtils configEmptyCache:[AppCacheUtils cacheURL]];
+    [AppCacheUtils configEmptyCache:[AppCacheUtils cacheURL] debugLog:nil];
 }
 
 /**
@@ -112,21 +122,16 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     NSString *formatURL = [self formatURL:pURL];
     NSString *md5CacheURL = [NSString app_md5:[self appendURL:formatURL params:params]];
 
-    [[self dataTasks] enumerateObjectsUsingBlock:^(id _Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
-        if ([obj isKindOfClass:[NSDictionary class]] && [obj objectForKey:md5CacheURL]) {
-            [self breakTaskURL:pURL];
-            *stop = YES;
-        }
-    }];
+    [self breakTaskURL:pURL];
 
     NSDictionary *cachedata = [self configDataForFile:md5CacheURL];
     NSString *cacheURL = [cachedata objectForKey:@"cacheURL"];
     if (cacheURL) {
         /// 如果已下载完成则清除
-        [AppCacheUtils configEmptyCache:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:[cacheURL componentsSeparatedByString:@"/"].lastObject]];
+        [AppCacheUtils configEmptyCache:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:[cacheURL componentsSeparatedByString:@"/"].lastObject] debugLog:[cacheURL componentsSeparatedByString:@"/"].lastObject];
     }
     /// 清除当前文件的缓存文件
-    [AppCacheUtils configEmptyCache:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
+    [AppCacheUtils configEmptyCache:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] debugLog:md5CacheURL];
 }
 
 /**
@@ -140,6 +145,10 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         }
     });
     return app_Tasks;
+}
+
+- (NSMutableArray *)dataTasks {
+    return [AppNetwork dataTasks];
 }
 
 + (void)breakTask {
@@ -526,135 +535,89 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         [AppCacheUtils configCacheFolder:[AppCacheUtils cacheURL]];
     }
 
+    /// 3.判断该文件是否已经下载完成，如果完成则直接返回
     NSString *md5CacheURL = [NSString app_md5:[self appendURL:formatURL params:params]];
     NSMutableDictionary *cachedata = [[NSMutableDictionary alloc] initWithDictionary:[self configDataForFile:md5CacheURL]];
+    if ([[cachedata objectForKey:@"code"] isEqualToString:@"success"] && [[cachedata objectForKey:@"progress"] floatValue] == 1.0) {
+        AppLog(@"🍀 文件下载成功\n URL：%@", [cachedata objectForKey:@"cacheURL"]);
+        return nil;
+    }
 
-    AFHTTPSessionManager *manager = [self manager];
+    AppNetwork *target = [[AppNetwork alloc] init];
+    AFURLSessionManager *manager = target.manager;
+    manager.responseSerializer = [AFHTTPResponseSerializer serializer];
     AppURLSessionTask *appTask = nil;
 
-    /// 3.判断是否缓存过该文件，如果下载过则继续下载，如果已经下载完成直接返回
-    if ([cachedata objectForKey:@"data"] || [[cachedata objectForKey:@"progress"] floatValue] == 1.0) { /// 断点续传的文件
-        if ([[cachedata objectForKey:@"progress"] floatValue] == 1.0) {
-            /// 当前文件已经下载完成了
-            AppLog(@"🍀 文件下载成功\n URL：%@", [cachedata objectForKey:@"cacheURL"]);
-            return nil;
+    /// 4.获取当前下载信息的缓存信息，如果为 0 则充新下载 否则继续下载
+    __block long long currentLength = [AppCacheUtils bytesTotalCache:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:[[formatURL componentsSeparatedByString:@"/"] lastObject]]] * 1000.0 * 1000.0;
+
+    /// 5.建立请求信息
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:formatURL]];
+    [request setValue:[NSString stringWithFormat:@"bytes=%lld-", currentLength] forHTTPHeaderField:@"Range"];
+
+    __block NSFileHandle *app_flag = nil;
+
+    /* clang-format off */
+    appTask = [manager dataTaskWithRequest:request uploadProgress:^(NSProgress * _Nonnull uploadProgress) {
+        
+    } downloadProgress:^(NSProgress * _Nonnull downloadProgress) {
+        /// 6.实时监听下载进度
+        if (downloadProgress.fractionCompleted <= 1.0) {
+            [cachedata setValue:@(downloadProgress.fractionCompleted) forKey:@"progress"];
+            [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
         }
-        /// 继续下载
-        appTask = [self configCachedata:cachedata md5CacheURL:md5CacheURL manager:manager progress:progress appDone:appDone appError:appError];
-    } else { /// 首次下载的文件
-        appTask = [self configNewdata:cachedata formatURL:formatURL md5CacheURL:md5CacheURL manager:manager progress:progress appDone:appDone appError:appError];
-    }
+
+        if (progress) {
+            progress(currentLength + downloadProgress.completedUnitCount, [[cachedata objectForKey:@"pTotalLength"] longLongValue] ? : downloadProgress.totalUnitCount);
+        }
+    } completionHandler:^(NSURLResponse * _Nonnull response, id  _Nullable responseObject, NSError * _Nullable error) {
+        
+    }];
+    /* clang-format on */
+
+    /// 7.开始接受到下载请求信息
+    [manager setDataTaskDidReceiveResponseBlock:^NSURLSessionResponseDisposition(NSURLSession *_Nonnull session, NSURLSessionDataTask *_Nonnull dataTask, NSURLResponse *_Nonnull response) {
+        NSArray *arr = [response.URL.absoluteString componentsSeparatedByString:@"/"];
+        NSString *cacheURL = [[AppCacheUtils cacheURL] stringByAppendingPathComponent:arr.lastObject];
+
+        /// 判断当前文件是否下载过，如果没有则建立文件
+        if (![AppCacheUtils configJudgeFolderExists:cacheURL]) {
+            [[NSFileManager defaultManager] createFileAtPath:cacheURL contents:nil attributes:nil];
+            [cachedata setValue:cacheURL forKey:@"cacheURL"];
+            [cachedata setValue:@(response.expectedContentLength) forKey:@"pTotalLength"];
+            [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
+        }
+
+        app_flag = [NSFileHandle fileHandleForWritingAtPath:cacheURL];
+
+        return NSURLSessionResponseAllow;
+    }];
+
+    /// 8.开始接受下载数据
+    [manager setDataTaskDidReceiveDataBlock:^(NSURLSession *_Nonnull session, NSURLSessionDataTask *_Nonnull dataTask, NSData *_Nonnull data) {
+        [app_flag seekToEndOfFile];
+        [app_flag writeData:data];
+    }];
+
+    /// 9.下载完成
+    [manager setTaskDidCompleteBlock:^(NSURLSession *_Nonnull session, NSURLSessionTask *_Nonnull task, NSError *_Nullable error) {
+        [[self dataTasks] removeObject:task];
+        if (!error) {
+            AppLog(@"🍀 文件下载成功\n URL：%@", [[AppCacheUtils cacheURL] stringByAppendingPathComponent:[[task.response.URL.absoluteString componentsSeparatedByString:@"/"] lastObject]]);
+            [cachedata setValue:@"success" forKey:@"code"];
+            [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
+        } else {
+            AppLog(@"⚠️ 文件下载失败 Error：%@ %ld", [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
+        }
+    }];
 
     [appTask resume];
 
     if (appTask) {
-        [[self dataTasks] addObject:@{md5CacheURL : appTask}];
+        [[self dataTasks] addObject:appTask];
     }
 
     return appTask;
-}
-
-/**
- *  @brief 处理有缓存数据的文件下载
- */
-+ (AppURLSessionTask *)configCachedata:(NSMutableDictionary *)cachedata
-                           md5CacheURL:(NSString *)md5CacheURL
-                               manager:(AFURLSessionManager *)manager
-                              progress:(AppTaskProgress)progress
-                               appDone:(AppTaskDone)appDone
-                              appError:(AppTaskError)appError {
-    /* clang-format off */
-    return [manager downloadTaskWithResumeData:[cachedata objectForKey:@"data"] progress:^(NSProgress * _Nonnull downloadProgress) {
-        /// 4.实时监听下载进度
-        if (downloadProgress.fractionCompleted <= 1.0) {
-            AppLog(@"%f", downloadProgress.fractionCompleted);
-            [cachedata setValue:@(downloadProgress.fractionCompleted) forKey:@"progress"];
-            [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
-        }
-
-        if (progress) {
-            progress(downloadProgress.completedUnitCount, downloadProgress.totalUnitCount);
-        }
-    } destination:^NSURL * _Nonnull(NSURL * _Nonnull targetPath, NSURLResponse * _Nonnull response) {
-        /// 文件下载保存的沙盒路径，默认保存在 /Documents/AppNetwork 文件夹中
-        NSURL *cacheURL = [[NSURL fileURLWithPath:[AppCacheUtils cacheURL]] URLByAppendingPathComponent:[response suggestedFilename]];
-        [cachedata setValue:cacheURL.path forKey:@"cacheURL"];
-        [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
-        
-        return cacheURL;
-    } completionHandler:^(NSURLResponse * _Nonnull response, NSURL * _Nullable filePath, NSError * _Nullable error) {
-        [[self dataTasks] enumerateObjectsUsingBlock:^(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
-            if ([obj isKindOfClass:[NSDictionary class]] && [obj objectForKey:md5CacheURL]) {
-                [[self dataTasks] removeObject:obj];
-                *stop = YES;
-            }
-        }];
-        
-        if (!error) {
-            AppLog(@"🍀 文件下载成功\n URL：%@", filePath.path);
-        } else {
-            AppLog(@"⚠️ 文件下载失败 Error：%@ %ld", [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
-            /// 文件下载失败时保存已下载数据，可以在下次下载时继续下载
-            if (error.code == -999) {
-                return; /// 当取消下载时，不做数据保存（防止在下载中清除当前文件缓存时，清不干净）
-            }
-            [cachedata setValue:[error.userInfo objectForKey:@"NSURLSessionDownloadTaskResumeData"] forKey:@"data"];
-            [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
-        }
-    }];
-    /* clang-format on */
-}
-
-/**
- *  @brief 处理新建文件下载
- */
-+ (AppURLSessionTask *)configNewdata:(NSMutableDictionary *)cachedata
-                           formatURL:(NSString *)formatURL
-                         md5CacheURL:(NSString *)md5CacheURL
-                             manager:(AFURLSessionManager *)manager
-                            progress:(AppTaskProgress)progress
-                             appDone:(AppTaskDone)appDone
-                            appError:(AppTaskError)appError {
-    /* clang-format off */
-    return [manager downloadTaskWithRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:formatURL]] progress:^(NSProgress * _Nonnull downloadProgress) {
-        /// 4.实时监听下载进度
-        if (downloadProgress.fractionCompleted <= 1.0) {
-            AppLog(@"%f", downloadProgress.fractionCompleted);
-            [cachedata setValue:@(downloadProgress.fractionCompleted) forKey:@"progress"];
-            [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
-        }
-
-        if (progress) {
-            progress(downloadProgress.completedUnitCount, downloadProgress.totalUnitCount);
-        }
-    } destination:^NSURL * _Nonnull(NSURL * _Nonnull targetPath, NSURLResponse * _Nonnull response) {
-        /// 文件下载保存的沙盒路径，默认保存在 /Documents/AppNetwork 文件夹中
-        NSURL *cacheURL = [[NSURL fileURLWithPath:[AppCacheUtils cacheURL]] URLByAppendingPathComponent:[response suggestedFilename]];
-        [cachedata setValue:cacheURL.path forKey:@"cacheURL"];
-        [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
-        
-        return cacheURL;
-    } completionHandler:^(NSURLResponse * _Nonnull response, NSURL * _Nullable filePath, NSError * _Nullable error) {
-        [[self dataTasks] enumerateObjectsUsingBlock:^(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
-            if ([obj isKindOfClass:[NSDictionary class]] && [obj objectForKey:md5CacheURL]) {
-                [[self dataTasks] removeObject:obj];
-                *stop = YES;
-            }
-        }];
-        
-        if (!error) {
-            AppLog(@"🍀 文件下载成功\n URL：%@", filePath.path);
-        } else {
-            AppLog(@"⚠️ 文件下载失败 Error：%@ %ld", [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
-            /// 文件下载失败时保存已下载数据，可以在下次下载时继续下载
-            if (error.code == -999) {
-                return; /// 当取消下载时，不做数据保存（防止在下载中清除当前文件缓存时，清不干净）
-            }
-            [cachedata setValue:[error.userInfo objectForKey:@"NSURLSessionDownloadTaskResumeData"] forKey:@"data"];
-            [self configDataToFile:cachedata md5CacheURL:md5CacheURL];
-        }
-    }];
-    /* clang-format on */
 }
 
 /**
@@ -664,7 +627,11 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  *  @param md5CacheURL 通过下载地址和参数加密后得到的字符串，用于缓存文件的文件名
  */
 + (void)configDataToFile:(NSDictionary *)done md5CacheURL:(NSString *)md5CacheURL {
-    [NSKeyedArchiver archiveRootObject:done toFile:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
+    NSError *error = nil;
+    NSData *cachedata = [NSJSONSerialization dataWithJSONObject:done options:NSJSONWritingPrettyPrinted error:&error];
+    if (!error && cachedata) {
+        [AppCacheUtils configDataToFile:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cachedata];
+    }
 }
 
 /**
@@ -673,7 +640,20 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  *  @param md5CacheURL 通过下载地址和参数加密后得到的字符串，用于缓存文件的文件名
  */
 + (NSDictionary *)configDataForFile:(NSString *)md5CacheURL {
-    return [NSKeyedUnarchiver unarchiveObjectWithFile:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
+    NSError *error = nil;
+    NSData *cachedata = [AppCacheUtils configDataForFile:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
+
+    if (cachedata) {
+        id done = [NSJSONSerialization JSONObjectWithData:cachedata options:NSJSONReadingAllowFragments error:&error];
+        if (done && !error) {
+            return done;
+        }
+    }
+    return nil;
+}
+
+- (NSDictionary *)configDataForFile:(NSString *)md5CacheURL {
+    return [AppNetwork configDataForFile:md5CacheURL];
 }
 
 /* ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄*
@@ -718,6 +698,14 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     return app_manager;
 }
 
+- (AFHTTPSessionManager *)manager {
+    if (!_manager) {
+        app_manager = nil;
+        _manager = [AppNetwork manager];
+    }
+    return _manager;
+}
+
 /**
  *  @brief 用于拼接完整的请求URL，并格式化
  */
@@ -754,6 +742,10 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     return [appendURL stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
 }
 
+- (NSString *)formatURL:(NSString *)pURL {
+    return [AppNetwork formatURL:pURL];
+}
+
 /**
  *  @brief 用于拼接完整参数，方便在控制台显示当前请求链接的完整链接及参数
  */
@@ -785,6 +777,10 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         }
     }
     return pURL.length == 0 ? p : pURL;
+}
+
+- (NSString *)appendURL:(NSString *)pURL params:(id)params {
+    return [AppNetwork appendURL:pURL params:params];
 }
 
 @end

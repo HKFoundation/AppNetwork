@@ -46,7 +46,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSData *)configDataForFile:(NSString *)pURL;
 
 /**
- *  @brief 获取指定文件路径缓存总大小/MB
+ *  @brief 获取指定文件夹路径缓存总大小/MB
  */
 + (CGFloat)bytesTotalCache:(NSString *)pURL;
 
@@ -63,7 +63,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  *  @brief 清空指定文件路径网络数据缓存
  */
-+ (void)configEmptyCache:(NSString *)pURL;
++ (void)configEmptyCache:(NSString *)pURL debugLog:(nullable NSString *)debugLog;
 
 @end
 

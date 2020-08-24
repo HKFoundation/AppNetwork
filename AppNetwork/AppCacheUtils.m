@@ -69,7 +69,7 @@ static NSString *app_cache = @"Documents/AppNetwork";
 }
 
 /**
- *  @brief 获取指定文件路径缓存总大小/bytes
+ *  @brief 获取指定文件夹路径缓存总大小/MB
  */
 + (CGFloat)bytesTotalCache:(NSString *)pURL {
     unsigned long long bytes = 0;
@@ -77,14 +77,22 @@ static NSString *app_cache = @"Documents/AppNetwork";
     if ([self configJudgeFolderExists:pURL] && ![self configJudgeFolderEmpty:pURL]) {
         NSError *error = nil;
         NSArray *arr = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:pURL error:&error];
-        if (!error) {
+        if (!error) { /// 获取此文件夹下所有目录结构返回大小
             for (NSString *p in arr) {
+                error = nil;
                 NSString *URL = [pURL stringByAppendingPathComponent:p];
                 NSDictionary *data = [[NSFileManager defaultManager] attributesOfItemAtPath:URL error:&error];
 
                 if (!error) {
                     bytes += [data[NSFileSize] unsignedIntegerValue];
                 }
+            }
+        } else { /// 如果获取不到文件夹，则按照文件大小获取
+            error = nil;
+            NSDictionary *data = [[NSFileManager defaultManager] attributesOfItemAtPath:pURL error:&error];
+
+            if (!error) {
+                bytes += [data[NSFileSize] unsignedIntegerValue];
             }
         }
     }
@@ -113,14 +121,14 @@ static NSString *app_cache = @"Documents/AppNetwork";
 /**
  *  @brief 清空指定文件路径网络数据缓存
  */
-+ (void)configEmptyCache:(NSString *)pURL {
++ (void)configEmptyCache:(NSString *)pURL debugLog:(nullable NSString *)debugLog {
     if ([self configJudgeFolderExists:pURL]) {
         NSError *error = nil;
         [[NSFileManager defaultManager] removeItemAtPath:pURL error:&error];
         if (!error) {
-            AppLog(@"🍀 清空缓存成功");
+            AppLog(@"%@", !debugLog ? @"🍀 清空缓存成功" : [NSString stringWithFormat:@"🍀 %@ 文件删除成功", debugLog]);
         } else {
-            AppLog(@"⚠️ 清空缓存失败 Error：%@", error.localizedDescription);
+            AppLog(@"%@ Error：%@", !debugLog ? @"⚠️ 清空缓存失败" : [NSString stringWithFormat:@"⚠️ %@ 文件删除失败", debugLog], error.localizedDescription);
         }
     }
 }
