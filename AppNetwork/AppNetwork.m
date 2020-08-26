@@ -187,6 +187,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 }
 
 + (void)configHeader:(NSDictionary *)header {
+    app_header = header;
 }
 
 /* ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄*
@@ -398,6 +399,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     }
 
     /// 4.返回字典数据
+    appDone(done);
 }
 
 + (void)configDoneLog:(NSString *)pURL
@@ -506,9 +508,11 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     } success:^(NSURLSessionDataTask * _Nonnull task, id  _Nullable responseObject) {
         [[self dataTasks] removeObject:task];
         [self configDoneLog:task.originalRequest.URL.absoluteString done:responseObject params:params];
+        appDone(responseObject);
     } failure:^(NSURLSessionDataTask * _Nullable task, NSError * _Nonnull error) {
         [[self dataTasks] removeObject:task];
         [self configErrorLog:task.originalRequest.URL.absoluteString error:error params:params];
+        appError(error);
     }];
     /* clang-format on */
 
@@ -571,7 +575,11 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
             progress(currentLength + downloadProgress.completedUnitCount, [[cachedata objectForKey:@"pTotalLength"] longLongValue] ? : downloadProgress.totalUnitCount);
         }
     } completionHandler:^(NSURLResponse * _Nonnull response, id  _Nullable responseObject, NSError * _Nullable error) {
-        
+        if (!error) {
+            appDone(responseObject);
+        } else {
+            appError(error);
+        }
     }];
     /* clang-format on */
 
