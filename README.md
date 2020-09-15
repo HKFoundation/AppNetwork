@@ -13,7 +13,7 @@
     git add -A && git commit -m ""
     git push origin master
     git tag 0.1.0
-    git push origin 0.1.0
+    git push origin 0.0.5
     
     项目地址
     pod 'AppNetwork', :git => 'https://github.com/HKFoundation/AppNetwork.git'

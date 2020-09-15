@@ -36,14 +36,14 @@ NS_ASSUME_NONNULL_BEGIN
  *  @param pURL 文件路径
  *  @param data 需要保存的数据
  */
-+ (BOOL)configDataToFile:(NSString *)pURL data:(NSData *)data;
++ (BOOL)configFileToSaveLocal:(NSString *)pURL data:(NSData *)data;
 
 /**
  *  @brief 读取数据并返回
  *
  *  @param pURL 文件路径
  */
-+ (NSData *)configDataForFile:(NSString *)pURL;
++ (NSData *)configFileForLocal:(NSString *)pURL;
 
 /**
  *  @brief 获取指定文件夹路径缓存总大小/MB

@@ -55,7 +55,7 @@ static NSString *app_cache = @"Documents/AppNetwork";
  *  @param pURL 文件路径
  *  @param data 需要保存的数据
  */
-+ (BOOL)configDataToFile:(NSString *)pURL data:(NSData *)data {
++ (BOOL)configFileToSaveLocal:(NSString *)pURL data:(NSData *)data {
     return [[NSFileManager defaultManager] createFileAtPath:pURL contents:data attributes:nil];
 }
 
@@ -64,7 +64,7 @@ static NSString *app_cache = @"Documents/AppNetwork";
  *
  *  @param pURL 文件路径
  */
-+ (NSData *)configDataForFile:(NSString *)pURL {
++ (NSData *)configFileForLocal:(NSString *)pURL {
     return [[NSFileManager defaultManager] contentsAtPath:pURL];
 }
 
