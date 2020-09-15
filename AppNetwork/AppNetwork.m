@@ -660,7 +660,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     return nil;
 }
 
-- (NSDictionary *)configDataForFile:(NSString *)md5CacheURL {
+- (NSDictionary *)configFileForLocal:(NSString *)md5CacheURL {
     return [AppNetwork configFileForLocal:md5CacheURL];
 }
 
