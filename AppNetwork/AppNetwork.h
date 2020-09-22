@@ -51,6 +51,12 @@ typedef void (^AppTaskError)(NSError *error);
 /* ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄*
  * // MARK: 网络基础配置
  * ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄*/
+
+/**
+ *  @brief 用于判断当前网络状态
+ */
++ (void)configNetworkType:(void (^)(App_NET_STATE_TYPE done))done;
+
 /**
  *  @brief 用于指定网络请求接口的基础URL
  *

@@ -69,6 +69,22 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     });
 }
 
++ (void)configNetworkType:(void (^)(App_NET_STATE_TYPE done))done {
+    AFNetworkReachabilityManager *manager = [AFNetworkReachabilityManager sharedManager];
+    [manager startMonitoring];
+    [manager setReachabilityStatusChangeBlock:^(AFNetworkReachabilityStatus status) {
+        if (status == AFNetworkReachabilityStatusUnknown) {
+            done(App_NET_STATE_TYPE_UNKONWN);
+        } else if (status == AFNetworkReachabilityStatusNotReachable) {
+            done(App_NET_STATE_TYPE_NOTCONNECTED);
+        } else if (status == AFNetworkReachabilityStatusReachableViaWWAN) {
+            done(App_NET_STATE_TYPE_CONNECTEDWWAN);
+        } else if (status == AFNetworkReachabilityStatusReachableViaWiFi) {
+            done(App_NET_STATE_TYPE_CONNECTEDWIFI);
+        }
+    }];
+}
+
 + (void)configBaseURL:(NSString *)pURL {
     app_baseURL = pURL;
 }
@@ -120,12 +136,12 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  */
 + (void)configEmptyCache:(NSString *)pURL params:(NSDictionary *)params {
     NSString *formatURL = [self formatURL:pURL];
-    NSString *md5CacheURL = [NSString app_md5:[self appendURL:formatURL params:params]];
+    NSString *md5CacheURL = [NSString app_md5:[self append:formatURL params:params]];
 
     [self breakTaskURL:pURL];
 
-    NSDictionary *cachedata = [self configFileForLocal:md5CacheURL];
-    NSString *cacheURL = [cachedata objectForKey:@"cacheURL"];
+    NSDictionary *cache = [self configFileForLocal:md5CacheURL];
+    NSString *cacheURL = [cache objectForKey:@"cacheURL"];
     if (cacheURL) {
         /// 如果已下载完成则清除
         [AppCacheUtils configEmptyCache:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:[cacheURL componentsSeparatedByString:@"/"].lastObject] debugLog:[cacheURL componentsSeparatedByString:@"/"].lastObject];
@@ -379,15 +395,15 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     /// 3.如果需要缓存则存储当前数据
     if (cache) {
         NSError *error = nil;
-        NSString *md5CacheURL = [NSString app_md5:[self appendURL:appTask.originalRequest.URL.absoluteString params:params]];
-        NSData *cachedata = done;
+        NSString *md5CacheURL = [NSString app_md5:[self append:appTask.originalRequest.URL.absoluteString params:params]];
+        NSData *cache = done;
 
         if (![done isKindOfClass:[NSData class]]) {
-            cachedata = [NSJSONSerialization dataWithJSONObject:done options:NSJSONWritingPrettyPrinted error:&error];
+            cache = [NSJSONSerialization dataWithJSONObject:done options:NSJSONWritingPrettyPrinted error:&error];
         }
 
-        if (cachedata && !error && [AppCacheUtils configCacheFolder:[AppCacheUtils cacheURL]]) {
-            BOOL success = [AppCacheUtils configFileToSaveLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cachedata];
+        if (cache && !error && [AppCacheUtils configCacheFolder:[AppCacheUtils cacheURL]]) {
+            BOOL success = [AppCacheUtils configFileToSaveLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cache];
             if (success) {
                 AppLog(@"🍀 数据缓存成功\n URL：%@", [NSString stringWithFormat:@"%@/%@", [AppCacheUtils cacheURL], md5CacheURL])
             } else {
@@ -431,11 +447,11 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     /// 3.如果需要缓存则读取当前数据
     if (cache) {
         NSError *error = nil;
-        NSString *md5CacheURL = [NSString app_md5:[self appendURL:appTask.originalRequest.URL.absoluteString params:params]];
-        NSData *cachedata = [AppCacheUtils configFileForLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
+        NSString *md5CacheURL = [NSString app_md5:[self append:appTask.originalRequest.URL.absoluteString params:params]];
+        NSData *cache = [AppCacheUtils configFileForLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
 
-        if (cachedata) {
-            id done = [NSJSONSerialization JSONObjectWithData:cachedata options:NSJSONReadingAllowFragments error:&error];
+        if (cache) {
+            id done = [NSJSONSerialization JSONObjectWithData:cache options:NSJSONReadingAllowFragments error:&error];
             if (done && !error) {
                 AppLog(@"🍀 缓存加载成功\n URL：%@\n 返回数据：%@", appTask.originalRequest.URL.absoluteURL, done);
                 appDone(done);
@@ -540,10 +556,10 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     }
 
     /// 3.判断该文件是否已经下载完成，如果完成则直接返回
-    NSString *md5CacheURL = [NSString app_md5:[self appendURL:formatURL params:params]];
-    NSMutableDictionary *cachedata = [[NSMutableDictionary alloc] initWithDictionary:[self configFileForLocal:md5CacheURL]];
-    if ([[cachedata objectForKey:@"code"] isEqualToString:@"success"] && [[cachedata objectForKey:@"progress"] floatValue] == 1.0) {
-        AppLog(@"🍀 文件下载成功\n URL：%@", [cachedata objectForKey:@"cacheURL"]);
+    NSString *md5CacheURL = [NSString app_md5:[self append:formatURL params:params]];
+    NSMutableDictionary *cache = [[NSMutableDictionary alloc] initWithDictionary:[self configFileForLocal:md5CacheURL]];
+    if ([[cache objectForKey:@"code"] isEqualToString:@"success"] && [[cache objectForKey:@"progress"] floatValue] == 1.0) {
+        AppLog(@"🍀 文件下载成功\n URL：%@", [cache objectForKey:@"cacheURL"]);
         return nil;
     }
 
@@ -567,12 +583,12 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     } downloadProgress:^(NSProgress * _Nonnull downloadProgress) {
         /// 6.实时监听下载进度
         if (downloadProgress.fractionCompleted <= 1.0) {
-            [cachedata setValue:@(downloadProgress.fractionCompleted) forKey:@"progress"];
-            [self configFileToSaveLocal:cachedata md5CacheURL:md5CacheURL];
+            [cache setValue:@(downloadProgress.fractionCompleted) forKey:@"progress"];
+            [self configFileToSaveLocal:cache md5CacheURL:md5CacheURL];
         }
 
         if (progress) {
-            progress(currentLength + downloadProgress.completedUnitCount, [[cachedata objectForKey:@"pTotalLength"] longLongValue] ? : downloadProgress.totalUnitCount);
+            progress(currentLength + downloadProgress.completedUnitCount, [[cache objectForKey:@"pTotalLength"] longLongValue] ? : downloadProgress.totalUnitCount);
         }
     } completionHandler:^(NSURLResponse * _Nonnull response, id  _Nullable responseObject, NSError * _Nullable error) {
         if (!error) {
@@ -591,9 +607,9 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         /// 判断当前文件是否下载过，如果没有则建立文件
         if (![AppCacheUtils configJudgeFolderExists:cacheURL]) {
             [[NSFileManager defaultManager] createFileAtPath:cacheURL contents:nil attributes:nil];
-            [cachedata setValue:cacheURL forKey:@"cacheURL"];
-            [cachedata setValue:@(response.expectedContentLength) forKey:@"pTotalLength"];
-            [self configFileToSaveLocal:cachedata md5CacheURL:md5CacheURL];
+            [cache setValue:cacheURL forKey:@"cacheURL"];
+            [cache setValue:@(response.expectedContentLength) forKey:@"pTotalLength"];
+            [self configFileToSaveLocal:cache md5CacheURL:md5CacheURL];
         }
 
         app_flag = [NSFileHandle fileHandleForWritingAtPath:cacheURL];
@@ -612,8 +628,8 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         [[self dataTasks] removeObject:task];
         if (!error) {
             AppLog(@"🍀 文件下载成功\n URL：%@", [[AppCacheUtils cacheURL] stringByAppendingPathComponent:[[task.response.URL.absoluteString componentsSeparatedByString:@"/"] lastObject]]);
-            [cachedata setValue:@"success" forKey:@"code"];
-            [self configFileToSaveLocal:cachedata md5CacheURL:md5CacheURL];
+            [cache setValue:@"success" forKey:@"code"];
+            [self configFileToSaveLocal:cache md5CacheURL:md5CacheURL];
         } else {
             AppLog(@"⚠️ 文件下载失败 Error：%@ %ld", [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
         }
@@ -636,9 +652,9 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  */
 + (void)configFileToSaveLocal:(NSDictionary *)done md5CacheURL:(NSString *)md5CacheURL {
     NSError *error = nil;
-    NSData *cachedata = [NSJSONSerialization dataWithJSONObject:done options:NSJSONWritingPrettyPrinted error:&error];
-    if (!error && cachedata) {
-        [AppCacheUtils configFileToSaveLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cachedata];
+    NSData *cache = [NSJSONSerialization dataWithJSONObject:done options:NSJSONWritingPrettyPrinted error:&error];
+    if (!error && cache) {
+        [AppCacheUtils configFileToSaveLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cache];
     }
 }
 
@@ -649,10 +665,10 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  */
 + (NSDictionary *)configFileForLocal:(NSString *)md5CacheURL {
     NSError *error = nil;
-    NSData *cachedata = [AppCacheUtils configFileForLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
+    NSData *cache = [AppCacheUtils configFileForLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
 
-    if (cachedata) {
-        id done = [NSJSONSerialization JSONObjectWithData:cachedata options:NSJSONReadingAllowFragments error:&error];
+    if (cache) {
+        id done = [NSJSONSerialization JSONObjectWithData:cache options:NSJSONReadingAllowFragments error:&error];
         if (done && !error) {
             return done;
         }
@@ -757,7 +773,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 /**
  *  @brief 用于拼接完整参数，方便在控制台显示当前请求链接的完整链接及参数
  */
-+ (NSString *)appendURL:(NSString *)pURL params:(id)params {
++ (NSString *)append:(NSString *)pURL params:(id)params {
     if (!params || ![params isKindOfClass:[NSDictionary class]] || ![params count]) {
         return pURL;
     }
@@ -788,7 +804,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 }
 
 - (NSString *)appendURL:(NSString *)pURL params:(id)params {
-    return [AppNetwork appendURL:pURL params:params];
+    return [AppNetwork append:pURL params:params];
 }
 
 @end
