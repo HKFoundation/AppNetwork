@@ -1,4 +1,4 @@
-   //
+//
 //  AppCacheUtils.h
 //  AppNetwork
 //
@@ -28,7 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  *  @brief 判断文件夹目录是否存在，如果不存在会自动生成对应目录文件夹
  */
-+ (BOOL)configCacheFolder:(NSString *)pURL;
++ (BOOL)configNewDocument:(NSString *)pURL;
 
 /**
  *  @brief 生成文件并存储
@@ -36,14 +36,14 @@ NS_ASSUME_NONNULL_BEGIN
  *  @param pURL 文件路径
  *  @param data 需要保存的数据
  */
-+ (BOOL)configFileToSaveLocal:(NSString *)pURL data:(NSData *)data;
++ (BOOL)configContentSaveLocal:(NSString *)pURL data:(NSData *)data;
 
 /**
  *  @brief 读取数据并返回
  *
  *  @param pURL 文件路径
  */
-+ (NSData *)configFileForLocal:(NSString *)pURL;
++ (NSData *)configContentLocal:(NSString *)pURL;
 
 /**
  *  @brief 获取指定文件夹路径缓存总大小/MB
@@ -53,12 +53,12 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  *  @brief 判断文件夹是否存在
  */
-+ (BOOL)configJudgeFolderExists:(NSString *)pURL;
++ (BOOL)configDocumentExists:(NSString *)pURL;
 
 /**
  *  @brief 判断文件夹是否为空
  */
-+ (BOOL)configJudgeFolderEmpty:(NSString *)pURL;
++ (BOOL)configDocumentrEmpty:(NSString *)pURL;
 
 /**
  *  @brief 清空指定文件路径网络数据缓存

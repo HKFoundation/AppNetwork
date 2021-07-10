@@ -18,7 +18,6 @@ static CGFloat app_MB;                          /**< 设置的最大缓存空间
 static NSTimeInterval app_pTimed = 30.f;        /**< 请求超时时间 */
 static AFHTTPSessionManager *app_manager = nil; /**< AFHTTPSessionManager实例对象 */
 static NSDictionary *app_header = nil;          /**< 设置请求头部参数 */
-static NSMutableArray *app_Tasks;               /**< 请求集合 */
 
 @interface NSString (md5)
 
@@ -140,7 +139,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 
     [self breakTaskURL:pURL];
 
-    NSDictionary *cache = [self configFileForLocal:md5CacheURL];
+    NSDictionary *cache = [self configContentLocal:md5CacheURL];
     NSString *cacheURL = [cache objectForKey:@"cacheURL"];
     if (cacheURL) {
         /// 如果已下载完成则清除
@@ -150,33 +149,13 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     [AppCacheUtils configEmptyCache:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] debugLog:md5CacheURL];
 }
 
-/**
- *  @brief 当前的请求任务集合
- */
-+ (NSMutableArray *)dataTasks {
-    static dispatch_once_t pToken;
-    dispatch_once(&pToken, ^{
-        if (!app_Tasks) {
-            app_Tasks = [[NSMutableArray alloc] init];
-        }
-    });
-    return app_Tasks;
-}
-
-- (NSMutableArray *)dataTasks {
-    return [AppNetwork dataTasks];
-}
-
 + (void)breakTask {
     @synchronized(self) {
-        [[self dataTasks] enumerateObjectsUsingBlock:^(id _Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
-            if ([obj isKindOfClass:[AppURLSessionTask class]]) {
+        [app_manager.session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> *_Nonnull tasks) {
+            [tasks enumerateObjectsUsingBlock:^(__kindof NSURLSessionTask *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
                 [obj cancel];
-            } else if ([obj isKindOfClass:[NSDictionary class]]) {
-                [[obj allValues][0] cancel];
-            }
+            }];
         }];
-        [[self dataTasks] removeAllObjects];
     }
 }
 
@@ -185,19 +164,13 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         return;
     }
     @synchronized(self) {
-        [[self dataTasks] enumerateObjectsUsingBlock:^(id _Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
-            AppURLSessionTask *appTask = nil;
-            if ([obj isKindOfClass:[AppURLSessionTask class]]) {
-                appTask = obj;
-            } else if ([obj isKindOfClass:[NSDictionary class]]) {
-                appTask = [obj allValues][0];
-            }
-
-            if ([appTask.currentRequest.URL.absoluteString hasSuffix:pURL]) {
-                [appTask cancel];
-                [[self dataTasks] removeObject:obj];
-                *stop = YES;
-            }
+        [app_manager.session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> *_Nonnull tasks) {
+            [tasks enumerateObjectsUsingBlock:^(__kindof NSURLSessionTask *_Nonnull obj, NSUInteger idx, BOOL *_Nonnull stop) {
+                if ([obj.currentRequest.URL.absoluteString hasPrefix:pURL]) {
+                    [obj cancel];
+                    *stop = YES;
+                }
+            }];
         }];
     }
 }
@@ -370,10 +343,6 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     }
     /* clang-format on */
 
-    if (appTask) {
-        [[self dataTasks] addObject:appTask];
-    }
-
     return appTask;
 }
 
@@ -386,13 +355,10 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
                    params:(NSDictionary *)params
                     cache:(BOOL)cache
                   appDone:(AppTaskDone)appDone {
-    /// 1.从请求链接组中移除当前链接
-    [[self dataTasks] removeObject:appTask];
-
-    /// 2.控制台打印当前请求信息
+    /// 1.控制台打印当前请求信息
     [self configDoneLog:appTask.originalRequest.URL.absoluteString done:done params:params];
 
-    /// 3.如果需要缓存则存储当前数据
+    /// 2.如果需要缓存则存储当前数据
     if (cache) {
         NSError *error = nil;
         NSString *md5CacheURL = [NSString app_md5:[self append:appTask.originalRequest.URL.absoluteString params:params]];
@@ -402,8 +368,8 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
             cache = [NSJSONSerialization dataWithJSONObject:done options:NSJSONWritingPrettyPrinted error:&error];
         }
 
-        if (cache && !error && [AppCacheUtils configCacheFolder:[AppCacheUtils cacheURL]]) {
-            BOOL success = [AppCacheUtils configFileToSaveLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cache];
+        if (cache && !error && [AppCacheUtils configNewDocument:[AppCacheUtils cacheURL]]) {
+            BOOL success = [AppCacheUtils configContentSaveLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cache];
             if (success) {
                 AppLog(@"🍀 数据缓存成功\n URL：%@", [NSString stringWithFormat:@"%@/%@", [AppCacheUtils cacheURL], md5CacheURL])
             } else {
@@ -414,15 +380,17 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         }
     }
 
-    /// 4.返回字典数据
+    /// 3.返回字典数据
     appDone(done);
 }
 
-+ (void)configDoneLog:(NSString *)pURL
-                 done:(id)done
-               params:(NSDictionary *)params {
++ (void)configDoneLog:(NSString *)pURL done:(id)done params:(NSDictionary *)params {
+    if ([done isKindOfClass:[NSDictionary class]]) {
+        done = [self responseForFormat:done];
+    }
+
     if (params && params.count) {
-        AppLog(@"🍀 数据请求成功\n URL：%@\n 请求参数：%@\n 返回数据：%@", pURL, params, done);
+        AppLog(@"🍀 数据请求成功\n URL：%@\n 请求参数：%@\n 返回数据：%@", pURL, [self responseForFormat:params], done);
         return;
     }
     AppLog(@"🍀 数据请求成功\n URL：%@\n 返回数据：%@", pURL, done);
@@ -438,22 +406,19 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
                      cache:(BOOL)cache
                    appDone:(AppTaskDone)appDone
                   appError:(AppTaskError)appError {
-    /// 1.从请求链接组中移除当前链接
-    [[self dataTasks] removeObject:appTask];
-
-    /// 2.控制台打印当前错误信息
+    /// 1.控制台打印当前错误信息
     [self configErrorLog:appTask.originalRequest.URL.absoluteString error:error params:params];
 
-    /// 3.如果需要缓存则读取当前数据
+    /// 2.如果需要缓存则读取当前数据
     if (cache) {
         NSError *error = nil;
         NSString *md5CacheURL = [NSString app_md5:[self append:appTask.originalRequest.URL.absoluteString params:params]];
-        NSData *cache = [AppCacheUtils configFileForLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
+        NSData *cache = [AppCacheUtils configContentLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
 
         if (cache) {
             id done = [NSJSONSerialization JSONObjectWithData:cache options:NSJSONReadingAllowFragments error:&error];
             if (done && !error) {
-                AppLog(@"🍀 缓存加载成功\n URL：%@\n 返回数据：%@", appTask.originalRequest.URL.absoluteURL, done);
+                AppLog(@"🍀 缓存加载成功\n URL：%@\n 返回数据：%@", appTask.originalRequest.URL.absoluteURL, [self responseForFormat:done]);
                 appDone(done);
             } else {
                 AppLog(@"⚠️ 缓存加载失败 Error：%@ %ld", [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
@@ -463,15 +428,13 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         }
     }
 
-    /// 4.返回错误信息
+    /// 3.返回错误信息
     appError(error);
 }
 
-+ (void)configErrorLog:(NSString *)pURL
-                 error:(NSError *)error
-                params:(NSDictionary *)params {
++ (void)configErrorLog:(NSString *)pURL error:(NSError *)error params:(NSDictionary *)params {
     if (params && params.count) {
-        AppLog(@"⚠️ 数据请求失败\n URL：%@\n 请求参数：%@\n Error：%@ %ld", pURL, params, [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
+        AppLog(@"⚠️ 数据请求失败\n URL：%@\n 请求参数：%@\n Error：%@ %ld", pURL, [self responseForFormat:params], [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
         return;
     }
     AppLog(@"⚠️ 数据请求失败\n URL：%@\n Error：%@ %ld", pURL, [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
@@ -486,7 +449,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  *  @param pURL     接口地址
  *  @param image    需要上传的图片
  *  @param name     图片上传的请求参数名，由后端接口的人指定
- *  @param pType    大多情况下传 image/jpeg，可以自定义
+ *  @param mode     大多情况下传 image/jpeg，可以自定义
  *  @param params   请求参数
  *  @param progress 上传进度
  *  @param appDone  接口请求完成回调
@@ -497,7 +460,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 + (AppURLSessionTask *)reqForUploadImage:(NSString *)pURL
                                    image:(UIImage *)image
                                     name:(NSString *)name
-                                   pType:(NSString *)pType
+                                    mode:(NSString *)mode
                                   params:(NSDictionary *)params
                                 progress:(AppTaskProgress)progress
                                  appDone:(AppTaskDone)appDone
@@ -515,26 +478,20 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         format.dateFormat = @"yyyyMMddHHmmss";
         NSString *formatImage = [NSString stringWithFormat:@"%@.jpg", [format stringFromDate:[NSDate date]]];
         
-        [formData appendPartWithFileData:data name:name fileName:formatImage mimeType:pType];
+        [formData appendPartWithFileData:data name:name fileName:formatImage mimeType:mode];
         
     } progress:^(NSProgress * _Nonnull uploadProgress) {
         if (progress) {
             progress(uploadProgress.completedUnitCount, uploadProgress.totalUnitCount);
         }
     } success:^(NSURLSessionDataTask * _Nonnull task, id  _Nullable responseObject) {
-        [[self dataTasks] removeObject:task];
         [self configDoneLog:task.originalRequest.URL.absoluteString done:responseObject params:params];
         appDone(responseObject);
     } failure:^(NSURLSessionDataTask * _Nullable task, NSError * _Nonnull error) {
-        [[self dataTasks] removeObject:task];
         [self configErrorLog:task.originalRequest.URL.absoluteString error:error params:params];
         appError(error);
     }];
     /* clang-format on */
-
-    if (appTask) {
-        [[self dataTasks] addObject:appTask];
-    }
 
     return appTask;
 }
@@ -551,13 +508,13 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     NSString *formatURL = [self formatURL:pURL];
 
     /// 2.如果需要存储下载文件的目录不存在，就先新建目录
-    if (![AppCacheUtils configJudgeFolderExists:[AppCacheUtils cacheURL]]) {
-        [AppCacheUtils configCacheFolder:[AppCacheUtils cacheURL]];
+    if (![AppCacheUtils configDocumentExists:[AppCacheUtils cacheURL]]) {
+        [AppCacheUtils configNewDocument:[AppCacheUtils cacheURL]];
     }
 
     /// 3.判断该文件是否已经下载完成，如果完成则直接返回
     NSString *md5CacheURL = [NSString app_md5:[self append:formatURL params:params]];
-    NSMutableDictionary *cache = [[NSMutableDictionary alloc] initWithDictionary:[self configFileForLocal:md5CacheURL]];
+    NSMutableDictionary *cache = [[NSMutableDictionary alloc] initWithDictionary:[self configContentLocal:md5CacheURL]];
     if ([[cache objectForKey:@"code"] isEqualToString:@"success"] && [[cache objectForKey:@"progress"] floatValue] == 1.0) {
         AppLog(@"🍀 文件下载成功\n URL：%@", [cache objectForKey:@"cacheURL"]);
         return nil;
@@ -584,7 +541,7 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         /// 6.实时监听下载进度
         if (downloadProgress.fractionCompleted <= 1.0) {
             [cache setValue:@(downloadProgress.fractionCompleted) forKey:@"progress"];
-            [self configFileToSaveLocal:cache md5CacheURL:md5CacheURL];
+            [self configContentSaveLocal:cache md5CacheURL:md5CacheURL];
         }
 
         if (progress) {
@@ -605,11 +562,11 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
         NSString *cacheURL = [[AppCacheUtils cacheURL] stringByAppendingPathComponent:arr.lastObject];
 
         /// 判断当前文件是否下载过，如果没有则建立文件
-        if (![AppCacheUtils configJudgeFolderExists:cacheURL]) {
+        if (![AppCacheUtils configDocumentExists:cacheURL]) {
             [[NSFileManager defaultManager] createFileAtPath:cacheURL contents:nil attributes:nil];
             [cache setValue:cacheURL forKey:@"cacheURL"];
             [cache setValue:@(response.expectedContentLength) forKey:@"pTotalLength"];
-            [self configFileToSaveLocal:cache md5CacheURL:md5CacheURL];
+            [self configContentSaveLocal:cache md5CacheURL:md5CacheURL];
         }
 
         app_flag = [NSFileHandle fileHandleForWritingAtPath:cacheURL];
@@ -625,21 +582,16 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 
     /// 9.下载完成
     [manager setTaskDidCompleteBlock:^(NSURLSession *_Nonnull session, NSURLSessionTask *_Nonnull task, NSError *_Nullable error) {
-        [[self dataTasks] removeObject:task];
         if (!error) {
             AppLog(@"🍀 文件下载成功\n URL：%@", [[AppCacheUtils cacheURL] stringByAppendingPathComponent:[[task.response.URL.absoluteString componentsSeparatedByString:@"/"] lastObject]]);
             [cache setValue:@"success" forKey:@"code"];
-            [self configFileToSaveLocal:cache md5CacheURL:md5CacheURL];
+            [self configContentSaveLocal:cache md5CacheURL:md5CacheURL];
         } else {
             AppLog(@"⚠️ 文件下载失败 Error：%@ %ld", [AppError errorCodesForSystem:[NSString stringWithFormat:@"%ld", (long)error.code]], (long)error.code);
         }
     }];
 
     [appTask resume];
-
-    if (appTask) {
-        [[self dataTasks] addObject:appTask];
-    }
 
     return appTask;
 }
@@ -650,11 +602,11 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  *  @param done 需要缓存的数据
  *  @param md5CacheURL 通过下载地址和参数加密后得到的字符串，用于缓存文件的文件名
  */
-+ (void)configFileToSaveLocal:(NSDictionary *)done md5CacheURL:(NSString *)md5CacheURL {
++ (void)configContentSaveLocal:(NSDictionary *)done md5CacheURL:(NSString *)md5CacheURL {
     NSError *error = nil;
     NSData *cache = [NSJSONSerialization dataWithJSONObject:done options:NSJSONWritingPrettyPrinted error:&error];
     if (!error && cache) {
-        [AppCacheUtils configFileToSaveLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cache];
+        [AppCacheUtils configContentSaveLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL] data:cache];
     }
 }
 
@@ -663,9 +615,9 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
  *
  *  @param md5CacheURL 通过下载地址和参数加密后得到的字符串，用于缓存文件的文件名
  */
-+ (NSDictionary *)configFileForLocal:(NSString *)md5CacheURL {
++ (NSDictionary *)configContentLocal:(NSString *)md5CacheURL {
     NSError *error = nil;
-    NSData *cache = [AppCacheUtils configFileForLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
+    NSData *cache = [AppCacheUtils configContentLocal:[[AppCacheUtils cacheURL] stringByAppendingPathComponent:md5CacheURL]];
 
     if (cache) {
         id done = [NSJSONSerialization JSONObjectWithData:cache options:NSJSONReadingAllowFragments error:&error];
@@ -676,8 +628,8 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
     return nil;
 }
 
-- (NSDictionary *)configFileForLocal:(NSString *)md5CacheURL {
-    return [AppNetwork configFileForLocal:md5CacheURL];
+- (NSDictionary *)configContentLocal:(NSString *)md5CacheURL {
+    return [AppNetwork configContentLocal:md5CacheURL];
 }
 
 /* ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄＊ ┄┅┄┅┄┅┄┅┄*
@@ -805,6 +757,20 @@ static NSMutableArray *app_Tasks;               /**< 请求集合 */
 
 - (NSString *)appendURL:(NSString *)pURL params:(id)params {
     return [AppNetwork append:pURL params:params];
+}
+
+/// 对返回数据做 Json 字符串处理
++ (NSString *)responseForFormat:(id)done {
+    /// 带有转义字符的 Json 数据
+    NSMutableString *response = [NSMutableString stringWithString:[[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:done options:0 error:nil] encoding:NSUTF8StringEncoding]];
+
+    NSString *p = nil;
+    for (NSInteger index = 0; index < response.length; index++) {
+        p = [response substringWithRange:NSMakeRange(index, 1)];
+        if ([p isEqualToString:@"\\"])
+            [response deleteCharactersInRange:NSMakeRange(index, 1)];
+    }
+    return response.copy;
 }
 
 @end

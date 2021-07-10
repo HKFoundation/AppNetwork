@@ -19,7 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
 #define _TIME_ [[NSString stringWithFormat:@"%@", [[NSDate date] dateByAddingTimeInterval:[[NSTimeZone systemTimeZone] secondsFromGMTForDate:[NSDate date]]]] UTF8String]
 
 #ifdef DEBUG
-#define AppLog(k, ...) printf("%s [%s %03d] - [message: %s]\n", _TIME_, [[[NSString stringWithUTF8String:__FILE__] lastPathComponent] UTF8String], __LINE__, [[NSString stringWithFormat:(k), ##__VA_ARGS__] UTF8String]);
+#define AppLog(k, ...) printf("🇺🇳 %s [%s %03d] - [message: %s]\n", _TIME_, [[[NSString stringWithUTF8String:__FILE__] lastPathComponent] UTF8String], __LINE__, [[NSString stringWithFormat:(k), ##__VA_ARGS__] UTF8String]);
 #else
 #define AppLog(k, ...)
 #endif
@@ -30,8 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
  *  @param bytesLoad  已加载的进度
  *  @param bytesTotal 总进度的大小
  */
-typedef void (^_Nullable AppTaskProgress)(int64_t bytesLoad,
-                                          int64_t bytesTotal);
+typedef void (^_Nullable AppTaskProgress)(int64_t bytesLoad, int64_t bytesTotal);
 
 typedef NS_ENUM(NSInteger, App_NET_STATE_TYPE) {
     App_NET_STATE_TYPE_UNKONWN = -1,      /**< 未知网络 */
@@ -220,7 +219,7 @@ typedef void (^AppTaskError)(NSError *error);
  *  @param pURL     接口地址
  *  @param image    需要上传的图片
  *  @param name     图片上传的请求参数名，由后端接口的人指定
- *  @param pType    大多情况下传 image/jpeg，可以自定义
+ *  @param mode     大多情况下传 image/jpeg，可以自定义
  *  @param params   请求参数
  *  @param progress 上传进度
  *  @param appDone  接口请求完成回调
@@ -231,7 +230,7 @@ typedef void (^AppTaskError)(NSError *error);
 + (AppURLSessionTask *)reqForUploadImage:(NSString *)pURL
                                    image:(UIImage *)image
                                     name:(NSString *)name
-                                   pType:(NSString *)pType
+                                    mode:(NSString *)mode
                                   params:(NSDictionary *)params
                                 progress:(AppTaskProgress)progress
                                  appDone:(AppTaskDone)appDone

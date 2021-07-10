@@ -32,9 +32,9 @@ static NSString *app_cache = @"Documents/AppNetwork";
 /**
  *  @brief 判断文件夹目录是否存在，如果不存在会自动生成对应目录文件夹
  */
-+ (BOOL)configCacheFolder:(NSString *)pURL {
++ (BOOL)configNewDocument:(NSString *)pURL {
     /// 先判断目录是否存在
-    if ([self configJudgeFolderExists:pURL]) {
+    if ([self configDocumentExists:pURL]) {
         return YES;
     }
 
@@ -55,7 +55,7 @@ static NSString *app_cache = @"Documents/AppNetwork";
  *  @param pURL 文件路径
  *  @param data 需要保存的数据
  */
-+ (BOOL)configFileToSaveLocal:(NSString *)pURL data:(NSData *)data {
++ (BOOL)configContentSaveLocal:(NSString *)pURL data:(NSData *)data {
     return [[NSFileManager defaultManager] createFileAtPath:pURL contents:data attributes:nil];
 }
 
@@ -64,7 +64,7 @@ static NSString *app_cache = @"Documents/AppNetwork";
  *
  *  @param pURL 文件路径
  */
-+ (NSData *)configFileForLocal:(NSString *)pURL {
++ (NSData *)configContentLocal:(NSString *)pURL {
     return [[NSFileManager defaultManager] contentsAtPath:pURL];
 }
 
@@ -74,7 +74,7 @@ static NSString *app_cache = @"Documents/AppNetwork";
 + (CGFloat)bytesTotalCache:(NSString *)pURL {
     unsigned long long bytes = 0;
     /// 首先判断文件夹是否存在，文件夹是否为空
-    if ([self configJudgeFolderExists:pURL] && ![self configJudgeFolderEmpty:pURL]) {
+    if ([self configDocumentExists:pURL] && ![self configDocumentrEmpty:pURL]) {
         NSError *error = nil;
         NSArray *arr = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:pURL error:&error];
         if (!error) { /// 获取此文件夹下所有目录结构返回大小
@@ -102,14 +102,14 @@ static NSString *app_cache = @"Documents/AppNetwork";
 /**
  *  @brief 判断文件夹是否存在
  */
-+ (BOOL)configJudgeFolderExists:(NSString *)pURL {
++ (BOOL)configDocumentExists:(NSString *)pURL {
     return [[NSFileManager defaultManager] fileExistsAtPath:pURL];
 }
 
 /**
  *  @brief 判断文件夹是否为空 YES 为空文件夹
  */
-+ (BOOL)configJudgeFolderEmpty:(NSString *)pURL {
++ (BOOL)configDocumentrEmpty:(NSString *)pURL {
     NSError *error = nil;
     NSArray *arr = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:pURL error:&error];
     if (!error && arr.count == 0) {
@@ -122,7 +122,7 @@ static NSString *app_cache = @"Documents/AppNetwork";
  *  @brief 清空指定文件路径网络数据缓存
  */
 + (void)configEmptyCache:(NSString *)pURL debugLog:(nullable NSString *)debugLog {
-    if ([self configJudgeFolderExists:pURL]) {
+    if ([self configDocumentExists:pURL]) {
         NSError *error = nil;
         [[NSFileManager defaultManager] removeItemAtPath:pURL error:&error];
         if (!error) {
